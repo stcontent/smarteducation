@@ -6,8 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { --bg:#fff; --fg:#111; --muted:#666; --accent:#0b5; --card:#f6f6f6; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif;
-           background:var(--bg); color:var(--fg); }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; background:var(--bg); color:var(--fg); }
     header { padding:16px 20px; border-bottom:1px solid #e6e6e6; }
     h1 { margin:0; font-size:20px; }
     main { max-width:980px; margin: 16px auto; padding: 0 16px 48px; }
@@ -15,14 +14,10 @@
     .row { display:flex; flex-wrap:wrap; gap:12px; }
     .col { flex:1 1 220px; min-width:220px; }
     label { display:block; font-weight:600; margin-bottom:6px; }
-    select, input[type="number"], input[type="text"] {
-      width:100%; box-sizing:border-box; padding:10px 12px; border-radius:8px; border:1px solid #ddd; background:#fff;
-    }
+    select, input[type="number"], input[type="text"] { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:8px; border:1px solid #ddd; background:#fff; }
     .topics { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:8px; }
     .topic { background:#fff; border:1px solid #ddd; border-radius:10px; padding:10px; display:flex; gap:8px; align-items:center; }
-    button {
-      padding:10px 14px; border:none; border-radius:10px; background:var(--accent); color:#fff; font-weight:700; cursor:pointer;
-    }
+    button { padding:10px 14px; border:none; border-radius:10px; background:var(--accent); color:#fff; font-weight:700; cursor:pointer; }
     button.secondary { background:#333; }
     .muted { color:var(--muted); }
     .preview { white-space:pre-wrap; background:#fff; border:1px dashed #ccc; padding:12px; border-radius:10px; }
@@ -84,24 +79,26 @@
       <h2>Generate</h2>
       <div class="actions">
         <button id="btnPreview">Generate Preview</button>
-        <button id="btnPDF" class="secondary">Generate PDF</button>
+        <button id="btnPDF" class="secondary">Download PDF</button>
+        <a id="btnOpenTab" class="btn" href="#" target="_blank" style="display:none;">Open PDF in New Tab</a>
       </div>
       <div id="status" class="muted" style="margin-top:10px;"></div>
       <h3 style="margin-top:14px;">Preview</h3>
       <div id="preview" class="preview"></div>
-      <div id="pdfLink" style="margin-top:12px;"></div>
     </section>
   </main>
 
   <script>
-    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyqsvf_VrOJh8lNID2P3cx8OutLTRjHVVn-v1USEBYWBip4_Z7wdw0JtlKa4QYASjo2/exec'; // <- Replace after you deploy the Apps Script web app
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyqsvf_VrOJh8lNID2P3cx8OutLTRjHVVn-v1USEBYWBip4_Z7wdw0JtlKa4QYASjo2/exec'; // <- Replace with your Apps Script web app URL
 
     let currentSheet = null;
+    let lastPdfDataUrl = null;
+    let lastPdfFileName = null;
 
     document.addEventListener('DOMContentLoaded', async () => {
       await loadSubjects();
       await loadGrades();
-      await refreshTopics(); // initial load for defaults
+      await refreshTopics();
 
       document.getElementById('subjectSel').addEventListener('change', refreshTopics);
       document.getElementById('gradeSel').addEventListener('change', refreshTopics);
@@ -173,7 +170,7 @@
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.value = t.id;
-        cb.checked = true; // preselect to make it easy
+        cb.checked = true;
         const span = document.createElement('span');
         span.textContent = t.label;
         item.appendChild(cb);
@@ -191,7 +188,8 @@
 
     async function onPreview() {
       setStatus('Generating preview...');
-      clearPdfLink();
+      lastPdfDataUrl = null;
+      toggleOpenTab(false);
 
       const subject = document.getElementById('subjectSel').value;
       const grade = document.getElementById('gradeSel').value;
@@ -221,25 +219,42 @@
         setStatus('Please generate a preview first.');
         return;
       }
-      setStatus('Creating PDF in Drive...');
-      clearPdfLink();
+      setStatus('Creating PDF...');
+      toggleOpenTab(false);
 
       try {
-        const res = await api('generatePDF', { sheet: currentSheet, options: {} });
+        const res = await api('generatePDF', { sheet: currentSheet });
         if (res.error) throw new Error(res.error);
 
-        setStatus('PDF generated.');
-        const linkWrap = document.getElementById('pdfLink');
-        linkWrap.innerHTML = '';
-        const a = document.createElement('a');
-        a.href = res.url;
-        a.target = '_blank';
-        a.className = 'btn';
-        a.textContent = 'Open PDF: ' + res.name;
-        linkWrap.appendChild(a);
+        lastPdfDataUrl = res.dataUrl;
+        lastPdfFileName = res.fileName || 'worksheet.pdf';
+
+        // Instant download
+        triggerDownload(lastPdfDataUrl, lastPdfFileName);
+
+        // Also show an "open in new tab" link
+        const a = document.getElementById('btnOpenTab');
+        a.href = lastPdfDataUrl;
+        a.download = lastPdfFileName;
+        toggleOpenTab(true);
+
+        setStatus('PDF ready.');
       } catch (err) {
         setStatus('Error: ' + err.message);
       }
+    }
+
+    function triggerDownload(dataUrl, fileName) {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function toggleOpenTab(show) {
+      document.getElementById('btnOpenTab').style.display = show ? 'inline-block' : 'none';
     }
 
     function renderPreview(sheet) {
@@ -253,7 +268,7 @@
         `Topics: ${meta.topics.join(', ')}`,
         `Time: ${meta.timeMinutes} minutes`,
         `Number Range (max): ${meta.maxNumber}`,
-        `Total Questions: ${meta.numQuestions}`,
+        `Total Questions: ${meta.numQuestions}`
       ].join('\n');
 
       const qText = qs.map((q, i) => `${i + 1}) ${q.qText}`).join('\n');
@@ -266,12 +281,7 @@
       }
     }
 
-    function setStatus(msg) {
-      document.getElementById('status').textContent = msg;
-    }
-    function clearPdfLink() {
-      document.getElementById('pdfLink').innerHTML = '';
-    }
+    function setStatus(msg) { document.getElementById('status').textContent = msg; }
   </script>
 </body>
 </html>
