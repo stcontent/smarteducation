@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Test Sheets App – Mathematics (Grade 1 ready)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#fff; --fg:#111; --muted:#666; --accent:#0b5; --card:#f6f6f6; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif;
+           background:var(--bg); color:var(--fg); }
+    header { padding:16px 20px; border-bottom:1px solid #e6e6e6; }
+    h1 { margin:0; font-size:20px; }
+    main { max-width:980px; margin: 16px auto; padding: 0 16px 48px; }
+    .card { background:var(--card); border:1px solid #e5e5e5; border-radius:12px; padding:16px; margin-bottom:16px; }
+    .row { display:flex; flex-wrap:wrap; gap:12px; }
+    .col { flex:1 1 220px; min-width:220px; }
+    label { display:block; font-weight:600; margin-bottom:6px; }
+    select, input[type="number"], input[type="text"] {
+      width:100%; box-sizing:border-box; padding:10px 12px; border-radius:8px; border:1px solid #ddd; background:#fff;
+    }
+    .topics { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:8px; }
+    .topic { background:#fff; border:1px solid #ddd; border-radius:10px; padding:10px; display:flex; gap:8px; align-items:center; }
+    button {
+      padding:10px 14px; border:none; border-radius:10px; background:var(--accent); color:#fff; font-weight:700; cursor:pointer;
+    }
+    button.secondary { background:#333; }
+    .muted { color:var(--muted); }
+    .preview { white-space:pre-wrap; background:#fff; border:1px dashed #ccc; padding:12px; border-radius:10px; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; }
+    a.btn { display:inline-block; text-decoration:none; background:#0a7; color:#fff; padding:10px 12px; border-radius:10px; font-weight:700; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Test Sheets App – Math Worksheets</h1>
+    <div class="muted">Select subject → grade → topics. Generate preview and PDF. (Fully implemented: <b>Grade 1</b>.)</div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Setup</h2>
+      <div class="row">
+        <div class="col">
+          <label for="subjectSel">Subject</label>
+          <select id="subjectSel"></select>
+        </div>
+        <div class="col">
+          <label for="gradeSel">Grade</label>
+          <select id="gradeSel"></select>
+        </div>
+        <div class="col">
+          <label for="numQuestions">Number of Questions</label>
+          <input id="numQuestions" type="number" min="5" max="100" value="20" />
+        </div>
+        <div class="col">
+          <label for="maxNumber">Max Number (range)</label>
+          <select id="maxNumber">
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+        <div class="col">
+          <label for="timeMinutes">Time (minutes)</label>
+          <input id="timeMinutes" type="number" min="5" max="120" value="20" />
+        </div>
+        <div class="col" style="display:flex; align-items:flex-end;">
+          <label style="display:flex; gap:8px; align-items:center;">
+            <input id="includeAnswers" type="checkbox" />
+            Include Answer Key
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Topics</h2>
+      <div id="topicsWrap" class="topics"></div>
+      <div id="gradeNote" class="muted" style="margin-top:8px;"></div>
+    </section>
+
+    <section class="card">
+      <h2>Generate</h2>
+      <div class="actions">
+        <button id="btnPreview">Generate Preview</button>
+        <button id="btnPDF" class="secondary">Generate PDF</button>
+      </div>
+      <div id="status" class="muted" style="margin-top:10px;"></div>
+      <h3 style="margin-top:14px;">Preview</h3>
+      <div id="preview" class="preview"></div>
+      <div id="pdfLink" style="margin-top:12px;"></div>
+    </section>
+  </main>
+
+  <script>
+    const WEB_APP_URL = 'YOUR_WEB_APP_URL_HERE'; // <- Replace after you deploy the Apps Script web app
+
+    let currentSheet = null;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      await loadSubjects();
+      await loadGrades();
+      await refreshTopics(); // initial load for defaults
+
+      document.getElementById('subjectSel').addEventListener('change', refreshTopics);
+      document.getElementById('gradeSel').addEventListener('change', refreshTopics);
+
+      document.getElementById('btnPreview').addEventListener('click', onPreview);
+      document.getElementById('btnPDF').addEventListener('click', onPDF);
+    });
+
+    async function api(action, data = {}) {
+      const res = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...data })
+      });
+      return res.json();
+    }
+
+    async function loadSubjects() {
+      const sel = document.getElementById('subjectSel');
+      sel.innerHTML = '';
+      const resp = await api('getSubjects');
+      (resp.subjects || []).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function loadGrades() {
+      const sel = document.getElementById('gradeSel');
+      sel.innerHTML = '';
+      const resp = await api('getGrades');
+      (resp.grades || []).forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.id;
+        opt.textContent = g.label;
+        sel.appendChild(opt);
+      });
+      sel.value = '1'; // default Grade 1
+    }
+
+    async function refreshTopics() {
+      const subject = document.getElementById('subjectSel').value;
+      const grade = document.getElementById('gradeSel').value;
+      const wrap = document.getElementById('topicsWrap');
+      const note = document.getElementById('gradeNote');
+
+      const resp = await api('getTopics', { subject, grade });
+      wrap.innerHTML = '';
+
+      if (grade !== '1') {
+        note.textContent = 'Only Grade 1 worksheet generation is implemented right now. Other grades coming soon.';
+      } else {
+        note.textContent = '';
+      }
+
+      if (!resp.topics || !resp.topics.length) {
+        const div = document.createElement('div');
+        div.className = 'muted';
+        div.textContent = 'No topics available for this selection.';
+        wrap.appendChild(div);
+        return;
+      }
+
+      resp.topics.forEach(t => {
+        const item = document.createElement('label');
+        item.className = 'topic';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = t.id;
+        cb.checked = true; // preselect to make it easy
+        const span = document.createElement('span');
+        span.textContent = t.label;
+        item.appendChild(cb);
+        item.appendChild(span);
+        wrap.appendChild(item);
+      });
+    }
+
+    function collectTopics() {
+      const cbs = document.querySelectorAll('#topicsWrap input[type="checkbox"]');
+      const topics = [];
+      cbs.forEach(cb => { if (cb.checked) topics.push(cb.value); });
+      return topics;
+    }
+
+    async function onPreview() {
+      setStatus('Generating preview...');
+      clearPdfLink();
+
+      const subject = document.getElementById('subjectSel').value;
+      const grade = document.getElementById('gradeSel').value;
+      const topics = collectTopics();
+
+      const settings = {
+        numQuestions: +document.getElementById('numQuestions').value || 20,
+        maxNumber: +document.getElementById('maxNumber').value || 20,
+        timeMinutes: +document.getElementById('timeMinutes').value || 20,
+        includeAnswers: document.getElementById('includeAnswers').checked
+      };
+
+      try {
+        const sheet = await api('generateSheet', { subject, grade, topics, settings });
+        if (sheet.error) throw new Error(sheet.error);
+        currentSheet = sheet;
+
+        renderPreview(sheet);
+        setStatus('Preview ready.');
+      } catch (err) {
+        setStatus('Error: ' + err.message);
+      }
+    }
+
+    async function onPDF() {
+      if (!currentSheet) {
+        setStatus('Please generate a preview first.');
+        return;
+      }
+      setStatus('Creating PDF in Drive...');
+      clearPdfLink();
+
+      try {
+        const res = await api('generatePDF', { sheet: currentSheet, options: {} });
+        if (res.error) throw new Error(res.error);
+
+        setStatus('PDF generated.');
+        const linkWrap = document.getElementById('pdfLink');
+        linkWrap.innerHTML = '';
+        const a = document.createElement('a');
+        a.href = res.url;
+        a.target = '_blank';
+        a.className = 'btn';
+        a.textContent = 'Open PDF: ' + res.name;
+        linkWrap.appendChild(a);
+      } catch (err) {
+        setStatus('Error: ' + err.message);
+      }
+    }
+
+    function renderPreview(sheet) {
+      const box = document.getElementById('preview');
+      const meta = sheet.meta;
+      const qs = sheet.questions;
+
+      const header = [
+        `Subject: ${meta.subject}`,
+        `Grade: ${meta.grade}`,
+        `Topics: ${meta.topics.join(', ')}`,
+        `Time: ${meta.timeMinutes} minutes`,
+        `Number Range (max): ${meta.maxNumber}`,
+        `Total Questions: ${meta.numQuestions}`,
+      ].join('\n');
+
+      const qText = qs.map((q, i) => `${i + 1}) ${q.qText}`).join('\n');
+
+      box.textContent = header + '\n\n' + qText;
+
+      if (meta.includeAnswers) {
+        const aText = '\n\nAnswer Key:\n' + qs.map((q, i) => `${i + 1}) ${q.answer}`).join('\n');
+        box.textContent += aText;
+      }
+    }
+
+    function setStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+    function clearPdfLink() {
+      document.getElementById('pdfLink').innerHTML = '';
+    }
+  </script>
+</body>
+</html>
